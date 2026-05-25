@@ -32,6 +32,12 @@
 
 ---
 
+<p align="center">
+  <img src="doc/1.png" alt="UI" />
+</p>
+
+---
+
 ## Features
 
 - **Zero Annotation Invasion** — No extra annotations needed; extracts docs from Javadoc, line comments, and Swagger annotations
