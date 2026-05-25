@@ -1,2 +1,0 @@
-org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
-ink.icoding.marginalia.autoconfigure.config.MarginaliaAutoConfiguration
