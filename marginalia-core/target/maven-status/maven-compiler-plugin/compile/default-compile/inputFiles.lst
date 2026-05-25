@@ -1,0 +1,15 @@
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/model/ApiDoc.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/model/ControllerDoc.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/model/DocTree.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/model/EndpointParam.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/model/EntityDoc.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/model/FieldDoc.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/model/IndexEntry.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/model/PersistMeta.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/model/RequestBodyDoc.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/model/ResponseDoc.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/parser/SourceParser.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/persistence/PersistenceManager.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/scanner/SourceScanner.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/service/MarginaliaService.java
+/Users/xiatian/projects/GitHub/Marginalia/marginalia-core/src/main/java/ink/icoding/marginalia/core/util/SignatureUtil.java

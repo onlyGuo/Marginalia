@@ -1,0 +1,7 @@
+ink/icoding/marginalia/autoconfigure/debugger/DebuggerService.class
+ink/icoding/marginalia/autoconfigure/config/MarginaliaAutoConfiguration.class
+ink/icoding/marginalia/autoconfigure/debugger/DebuggerService$DebugResponse.class
+ink/icoding/marginalia/autoconfigure/controller/WebController.class
+ink/icoding/marginalia/autoconfigure/config/MarginaliaProperties.class
+ink/icoding/marginalia/autoconfigure/config/MarginaliaAutoConfiguration$MarginaliaWebMvcConfig.class
+ink/icoding/marginalia/autoconfigure/controller/WebController$DebugRequest.class

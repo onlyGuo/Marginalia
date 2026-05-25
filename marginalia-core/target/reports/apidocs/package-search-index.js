@@ -1,0 +1,1 @@
+packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html"},{"l":"ink.icoding.marginalia.core.model"},{"l":"ink.icoding.marginalia.core.parser"},{"l":"ink.icoding.marginalia.core.persistence"},{"l":"ink.icoding.marginalia.core.scanner"},{"l":"ink.icoding.marginalia.core.service"},{"l":"ink.icoding.marginalia.core.util"}];updateSearchResults();
