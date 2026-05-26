@@ -202,6 +202,10 @@ public class MarginaliaService {
                     for (FieldDoc field : entity.getFields()) {
                         if (field.getType() != null) {
                             discoverEntity(field.getType(), sourceFile, cu, entities, depth + 1);
+                            EntityDoc fieldEntity = resolveCachedFieldEntity(field.getType(), entities);
+                            if (fieldEntity != null) {
+                                field.setEntityRef(fieldEntity.getFullName());
+                            }
                         }
                     }
                 }
@@ -213,6 +217,15 @@ public class MarginaliaService {
 
     private boolean containsEntity(String simpleName, Map<String, EntityDoc> entities) {
         return entities.values().stream().anyMatch(e -> e.getName().equals(simpleName));
+    }
+
+    private EntityDoc resolveCachedFieldEntity(String type, Map<String, EntityDoc> entities) {
+        List<String> classNames = extractClassNames(type);
+        for (int i = classNames.size() - 1; i >= 0; i--) {
+            EntityDoc entity = findCachedEntity(classNames.get(i), entities);
+            if (entity != null) return entity;
+        }
+        return null;
     }
 
     /**

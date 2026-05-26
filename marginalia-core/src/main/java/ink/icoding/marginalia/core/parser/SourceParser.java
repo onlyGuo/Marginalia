@@ -360,6 +360,12 @@ public class SourceParser {
         List<String> values = enumDecl.getEntries().stream()
                 .map(EnumConstantDeclaration::getNameAsString)
                 .toList();
+        List<EnumValueDoc> valueDocs = enumDecl.getEntries().stream()
+                .map(entry -> EnumValueDoc.builder()
+                        .name(entry.getNameAsString())
+                        .description(extractEnumValueDescription(entry))
+                        .build())
+                .toList();
 
         return EntityDoc.builder()
                 .name(enumDecl.getNameAsString())
@@ -367,6 +373,7 @@ public class SourceParser {
                 .description(description)
                 .isEnum(true)
                 .enumValues(values)
+                .enumValueDocs(valueDocs)
                 .fields(List.of())
                 .build();
     }
@@ -610,6 +617,20 @@ public class SourceParser {
             }
         }
         return null;
+    }
+
+    private String extractEnumValueDescription(EnumConstantDeclaration entry) {
+        Optional<JavadocComment> javadoc = entry.getJavadocComment();
+        if (javadoc.isPresent()) {
+            return cleanJavadoc(javadoc.get().getContent());
+        }
+        String swaggerDesc = extractSwaggerDescription(entry);
+        if (swaggerDesc != null) return swaggerDesc;
+        return entry.getComment()
+                .map(Comment::getContent)
+                .map(String::trim)
+                .filter(text -> !text.isEmpty())
+                .orElse(null);
     }
 
     // ---- Swagger Annotation Helpers ----

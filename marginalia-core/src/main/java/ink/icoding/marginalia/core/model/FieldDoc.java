@@ -27,6 +27,9 @@ public class FieldDoc {
     /** Fully qualified type */
     private String fullType;
 
+    /** Entity reference name (links to EntityDoc) */
+    private String entityRef;
+
     /** Description from Javadoc or comments */
     private String description;
 

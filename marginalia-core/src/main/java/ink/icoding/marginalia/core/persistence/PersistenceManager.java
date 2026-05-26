@@ -505,6 +505,7 @@ public class PersistenceManager {
                 .fullName(generated.getFullName())
                 .isEnum(generated.isEnum())
                 .enumValues(generated.getEnumValues())
+                .enumValueDocs(generated.getEnumValueDocs())
                 .superClass(generated.getSuperClass());
 
         merged.description(modifiedFields.contains("description") ?
@@ -552,7 +553,8 @@ public class PersistenceManager {
         FieldDoc.FieldDocBuilder builder = FieldDoc.builder()
                 .name(generated.getName())
                 .type(generated.getType())
-                .fullType(generated.getFullType());
+                .fullType(generated.getFullType())
+                .entityRef(generated.getEntityRef());
 
         builder.description(modifiedFields.contains(fieldPrefix + ".description") ?
                 persisted.getDescription() : generated.getDescription());

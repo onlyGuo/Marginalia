@@ -45,6 +45,10 @@ public class EntityDoc {
     @Builder.Default
     private List<String> enumValues = new ArrayList<>();
 
+    /** Enum value documentation if isEnum is true */
+    @Builder.Default
+    private List<EnumValueDoc> enumValueDocs = new ArrayList<>();
+
     /** Persistence metadata */
     private PersistMeta persistMeta;
 }

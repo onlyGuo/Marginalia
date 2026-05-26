@@ -692,24 +692,96 @@ function resolveEntityRef(type) {
 
 function renderEntityFieldsInline(entityFullName) {
     const entity = allEntities.find(e => e.fullName === entityFullName);
-    if (!entity || !entity.fields || entity.fields.length === 0) return '';
+    if (!entity || ((entity.isEnum || entity.enum) && !hasEnumValues(entity)) || (!entity.isEnum && !entity.enum && (!entity.fields || entity.fields.length === 0))) return '';
 
     let html = '<div style="margin:8px 0;padding:12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);">';
     html += `<div style="margin-bottom:8px;"><span class="entity-link" onclick="selectEntity('${esc(entity.fullName)}')" style="font-weight:700;font-size:14px;">${esc(entity.name)}</span>`;
     if (entity.description) html += `<span style="color:var(--fg3);font-size:12px;margin-left:8px;">${esc(entity.description)}</span>`;
     html += '</div>';
-    html += '<table class="doc-table" style="margin:0;"><thead><tr><th style="width:20%">Field</th><th style="width:15%">Type</th><th>Description</th><th style="width:15%">Example</th></tr></thead><tbody>';
+    if (entity.isEnum || entity.enum) {
+        html += renderEnumValues(entity, 0);
+    } else {
+        html += '<table class="doc-table" style="margin:0;"><thead><tr><th style="width:20%">Field</th><th style="width:15%">Type</th><th>Description</th><th style="width:15%">Example</th></tr></thead><tbody>';
+        html += renderFieldRows(entity, 0, new Set([entity.fullName]), false);
+        html += '</tbody></table>';
+    }
+    html += '</div>';
+    return html;
+}
+
+function renderFieldRows(entity, depth, visited, showRequired) {
+    if (!entity || !entity.fields) return '';
+    let html = '';
     entity.fields.forEach(f => {
+        const child = resolveFieldEntity(f);
+        const indent = depth * 22;
         html += '<tr>';
-        html += `<td class="param-name">${esc(f.name)}</td>`;
-        html += `<td class="param-type">${esc(f.type)}</td>`;
+        html += `<td class="param-name"><span style="display:inline-block;margin-left:${indent}px">${esc(f.name)}</span></td>`;
+        html += `<td class="param-type">${renderTypeCell(f, child)}</td>`;
+        if (showRequired) {
+            html += `<td>${f.required !== false ? '<span class="required">required</span>' : '<span class="optional">optional</span>'}</td>`;
+        }
         html += `<td style="color:var(--fg2);">${esc(f.description || '')}</td>`;
         html += `<td style="color:var(--fg3);font-size:12px;font-family:monospace;">${esc(f.example || '')}</td>`;
         html += '</tr>';
+
+        if (child && (child.isEnum || child.enum)) {
+            html += renderEnumRows(child, depth + 1, showRequired, false);
+        } else if (child && child.fields && child.fields.length && !visited.has(child.fullName)) {
+            const nextVisited = new Set(visited);
+            nextVisited.add(child.fullName);
+            html += renderFieldRows(child, depth + 1, nextVisited, showRequired);
+        }
     });
-    html += '</tbody></table>';
-    html += '</div>';
     return html;
+}
+
+function renderTypeCell(field, child) {
+    const type = field.type || '';
+    if (!child) return esc(type);
+    return `<span class="entity-link" onclick="selectEntity('${esc(child.fullName)}')">${esc(type)}</span>`;
+}
+
+function resolveFieldEntity(field) {
+    if (!field) return null;
+    if (field.entityRef) {
+        const byRef = allEntities.find(e => e.fullName === field.entityRef);
+        if (byRef) return byRef;
+    }
+    const ref = resolveEntityRef(field.fullType || field.type);
+    return ref ? allEntities.find(e => e.fullName === ref) : null;
+}
+
+function hasEnumValues(entity) {
+    return !!(entity && ((entity.enumValueDocs && entity.enumValueDocs.length) || (entity.enumValues && entity.enumValues.length)));
+}
+
+function getEnumValueDocs(entity) {
+    if (!entity) return [];
+    if (entity.enumValueDocs && entity.enumValueDocs.length) return entity.enumValueDocs;
+    return (entity.enumValues || []).map(v => ({ name: v, description: '' }));
+}
+
+function renderEnumValues(entity, depth) {
+    let html = '<table class="doc-table" style="margin:0;"><thead><tr><th style="width:35%">Value</th><th>Description</th></tr></thead><tbody>';
+    html += renderEnumRows(entity, depth, false, true);
+    html += '</tbody></table>';
+    return html;
+}
+
+function renderEnumRows(entity, depth, showRequired, compact) {
+    const indent = depth * 22;
+    return getEnumValueDocs(entity).map(v => {
+        let html = '<tr>';
+        html += `<td class="param-name"><span style="display:inline-block;margin-left:${indent}px">${esc(v.name || v)}</span></td>`;
+        if (!compact) {
+            html += '<td></td>';
+            if (showRequired) html += '<td></td>';
+        }
+        html += `<td style="color:var(--fg2);">${esc(v.description || '')}</td>`;
+        if (!compact) html += '<td></td>';
+        return html + '</tr>';
+    }).join('');
 }
 
 function renderEntityView(area, entity) {
@@ -721,28 +793,21 @@ function renderEntityView(area, entity) {
     html += '<button class="btn-secondary" style="margin-top:8px;padding:4px 10px;font-size:12px;" onclick="openEditEntity()">Edit</button>';
     html += '</div>';
 
-    if (entity.isEnum) {
+    if (entity.isEnum || entity.enum) {
         html += '<div class="doc-section"><h3>Enum Values</h3>';
-        html += '<div class="code-block">' + entity.enumValues.join('\n') + '</div>';
+        html += renderEnumValues(entity, 0);
         html += '</div>';
     } else if (entity.fields && entity.fields.length) {
         html += '<div class="doc-section"><h3>Fields</h3><table class="doc-table"><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th><th>Example</th></tr></thead><tbody>';
-        entity.fields.forEach(f => {
-            html += '<tr>';
-            html += `<td class="param-name">${esc(f.name)}</td>`;
-            html += `<td class="param-type">${esc(f.type)}</td>`;
-            html += `<td>${f.required !== false ? '<span class="required">required</span>' : '<span class="optional">optional</span>'}</td>`;
-            html += `<td>${esc(f.description || '')}</td>`;
-            html += `<td>${esc(f.example || '')}</td>`;
-            html += '</tr>';
-        });
+        html += renderFieldRows(entity, 0, new Set([entity.fullName]), true);
         html += '</tbody></table></div>';
     }
 
     // Show which APIs use this entity
     const usedBy = allApis.filter(a =>
         (a.requestBody && a.requestBody.entityRef === entity.fullName) ||
-        (a.response && a.response.entityRef === entity.fullName)
+        (a.response && a.response.entityRef === entity.fullName) ||
+        apiUsesEntity(a, entity.fullName)
     );
     if (usedBy.length) {
         html += '<div class="doc-section"><h3>Used By</h3>';
@@ -756,6 +821,25 @@ function renderEntityView(area, entity) {
 
     html += '</div>';
     area.innerHTML = html;
+}
+
+function apiUsesEntity(api, entityFullName) {
+    const roots = [];
+    if (api.requestBody) roots.push(api.requestBody.entityRef || resolveEntityRef(api.requestBody.fullType || api.requestBody.type));
+    if (api.response) roots.push(api.response.entityRef || resolveEntityRef(api.response.fullType || api.response.type));
+    return roots.some(root => root && entityTreeContains(root, entityFullName, new Set()));
+}
+
+function entityTreeContains(rootFullName, targetFullName, visited) {
+    if (rootFullName === targetFullName) return true;
+    if (!rootFullName || visited.has(rootFullName)) return false;
+    visited.add(rootFullName);
+    const root = allEntities.find(e => e.fullName === rootFullName);
+    if (!root || !root.fields) return false;
+    return root.fields.some(field => {
+        const child = resolveFieldEntity(field);
+        return child && entityTreeContains(child.fullName, targetFullName, visited);
+    });
 }
 
 // ==================== Debug Mode ====================
