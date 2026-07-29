@@ -1,6 +1,7 @@
 package ink.icoding.marginalia.core.parser;
 
 import com.github.javaparser.StaticJavaParser;
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.comments.Comment;
@@ -56,6 +57,11 @@ public class SourceParser {
             "Date", "UUID", "MultipartFile", "InputStream", "OutputStream", "byte[]"
     );
 
+    public SourceParser() {
+        StaticJavaParser.getParserConfiguration()
+                .setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17);
+    }
+
     /**
      * Parse a single Java source file and extract controller info.
      * Returns empty list if the file doesn't contain a controller.
@@ -81,8 +87,8 @@ public class SourceParser {
             });
 
             return controllers;
-        } catch (IOException e) {
-            log.error("Error reading source file: {}", file, e);
+        } catch (Exception e) {
+            log.error("Error parsing source file: {}", file, e);
             return List.of();
         }
     }
@@ -251,13 +257,19 @@ public class SourceParser {
                 }
             }
 
+            for (RecordDeclaration record : cu.findAll(RecordDeclaration.class)) {
+                if (record.getNameAsString().equals(SignatureUtil.simpleClassName(entityClassName))) {
+                    return parseRecordClass(record, cu);
+                }
+            }
+
             // Check enums
             for (EnumDeclaration enumDecl : cu.findAll(EnumDeclaration.class)) {
                 if (enumDecl.getNameAsString().equals(SignatureUtil.simpleClassName(entityClassName))) {
                     return parseEnumClass(enumDecl, cu);
                 }
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Error parsing entity file: {}", file, e);
         }
         return null;
@@ -283,6 +295,11 @@ public class SourceParser {
         for (ClassOrInterfaceDeclaration clazz : cu.findAll(ClassOrInterfaceDeclaration.class)) {
             if (clazz.getNameAsString().equals(simpleClassName)) {
                 return parseEntityClass(clazz, cu);
+            }
+        }
+        for (RecordDeclaration record : cu.findAll(RecordDeclaration.class)) {
+            if (record.getNameAsString().equals(simpleClassName)) {
+                return parseRecordClass(record, cu);
             }
         }
         for (EnumDeclaration enumDecl : cu.findAll(EnumDeclaration.class)) {
@@ -320,7 +337,7 @@ public class SourceParser {
     public CompilationUnit parseFile(Path file) {
         try {
             return StaticJavaParser.parse(file);
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Error parsing file: {}", file, e);
             return null;
         }
@@ -337,12 +354,9 @@ public class SourceParser {
         for (FieldDeclaration field : clazz.getFields()) {
             if (field.isStatic()) continue;
             for (VariableDeclarator var : field.getVariables()) {
-                fields.add(parseField(field, var));
+                fields.add(parseField(field, var, cu));
             }
         }
-
-        // Also parse record components if it's a record
-        // (handled via fields for now)
 
         return EntityDoc.builder()
                 .name(clazz.getNameAsString())
@@ -351,6 +365,46 @@ public class SourceParser {
                 .fields(fields)
                 .superClass(superClass)
                 .isEnum(false)
+                .build();
+    }
+
+    private EntityDoc parseRecordClass(RecordDeclaration record, CompilationUnit cu) {
+        List<FieldDoc> fields = record.getParameters().stream()
+                .map(component -> parseRecordComponent(record, component, cu))
+                .toList();
+
+        return EntityDoc.builder()
+                .name(record.getNameAsString())
+                .fullName(getFullyQualifiedClassName(record, cu))
+                .description(extractDescription(record))
+                .fields(fields)
+                .isEnum(false)
+                .build();
+    }
+
+    private FieldDoc parseRecordComponent(RecordDeclaration record,
+                                           com.github.javaparser.ast.body.Parameter component,
+                                           CompilationUnit cu) {
+        String description = extractRecordComponentDescription(record, component.getNameAsString());
+        if (description == null || description.isEmpty()) {
+            description = extractSwaggerDescription(component);
+        }
+        String example = extractAnnotationValue(component, "Schema", "example");
+        if (example == null) {
+            example = extractAnnotationValue(component, "ApiModelProperty", "example");
+        }
+
+        boolean required = !hasAnnotation(component, "Nullable") &&
+                extractAnnotationBoolean(component, "Schema", "required").orElse(true);
+
+        return FieldDoc.builder()
+                .name(component.getNameAsString())
+                .type(component.getType().asString())
+                .fullType(resolveFullType(component.getType(), cu))
+                .description(description)
+                .example(example)
+                .required(required)
+                .deprecated(hasAnnotation(component, "Deprecated"))
                 .build();
     }
 
@@ -378,7 +432,7 @@ public class SourceParser {
                 .build();
     }
 
-    private FieldDoc parseField(FieldDeclaration field, VariableDeclarator var) {
+    private FieldDoc parseField(FieldDeclaration field, VariableDeclarator var, CompilationUnit cu) {
         String description = extractDescription(field);
         // If no field-level comment, check for inline comment after declaration
         if (description == null || description.isEmpty()) {
@@ -401,7 +455,7 @@ public class SourceParser {
         return FieldDoc.builder()
                 .name(var.getNameAsString())
                 .type(var.getType().asString())
-                .fullType(var.getType().asString())
+                .fullType(resolveFullType(var.getType(), cu))
                 .description(description)
                 .example(example)
                 .required(required)
@@ -633,6 +687,22 @@ public class SourceParser {
                 .orElse(null);
     }
 
+    private String extractRecordComponentDescription(RecordDeclaration record, String componentName) {
+        Optional<JavadocComment> javadoc = record.getJavadocComment();
+        if (javadoc.isEmpty()) return null;
+
+        for (String line : javadoc.get().getContent().split("\\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("*")) trimmed = trimmed.substring(1).trim();
+            if (!trimmed.startsWith("@param")) continue;
+            String[] parts = trimmed.substring(6).trim().split("\\s+", 2);
+            if (parts.length == 2 && parts[0].equals(componentName)) {
+                return parts[1].trim();
+            }
+        }
+        return null;
+    }
+
     // ---- Swagger Annotation Helpers ----
 
     private String extractSwaggerDescription(NodeWithAnnotations<?> node) {
@@ -794,6 +864,7 @@ public class SourceParser {
         String simpleName = "";
         if (clazz instanceof ClassOrInterfaceDeclaration c) simpleName = c.getNameAsString();
         else if (clazz instanceof EnumDeclaration e) simpleName = e.getNameAsString();
+        else if (clazz instanceof RecordDeclaration r) simpleName = r.getNameAsString();
 
         if (cu.getPackageDeclaration().isPresent()) {
             return cu.getPackageDeclaration().get().getNameAsString() + "." + simpleName;
