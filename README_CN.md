@@ -19,7 +19,7 @@
 
 <p align="center">
   无需注解侵入，直接从 Java 源码的 Javadoc 和注释中提取 API 文档。<br/>
-  内置 Postman 风格的 Web UI，支持文档浏览和接口调试。
+  内置紧凑的 IDEA 风格 Web UI，支持文档浏览、实体导航和接口调试。
 </p>
 
 <p align="center">
@@ -33,7 +33,9 @@
 ---
 
 <p align="center">
-  <img src="doc/1.png" alt="UI" />
+  <img src="doc/1.png" alt="Marginalia Controller 与接口总览" />
+  <br/>
+  <sub>Controller 与接口总览</sub>
 </p>
 
 ---
@@ -42,7 +44,7 @@
 
 - **零注解侵入** — 不需要在代码中添加任何额外注解，直接从 Javadoc、行注释、Swagger 注解中提取文档
 - **优先级机制** — Javadoc > 行注释 > Swagger 注解 > 方法签名
-- **内置 Web UI** — Postman 风格的界面，支持文档模式和调试模式
+- **内置 Web UI** — 紧凑的 IDEA 风格界面，支持文档模式和调试模式
 - **接口调试** — 内置 HTTP 客户端，支持发送请求、自定义 Headers/Params、查看响应，支持 SSE
 - **实体自动发现** — 自动从请求/响应体类型中发现实体类，展示完整字段结构
 - **字段级合并** — 用户编辑的内容在重新扫描时不会丢失
@@ -109,12 +111,46 @@ marginalia:
 - 响应体（支持实体字段级展示 + JSON 示例）
 - 点击实体名称可跳转到实体详情页
 
+<p align="center">
+  <img src="doc/2.png" alt="嵌套实体与枚举文档" />
+  <br/>
+  <sub>请求体中的嵌套实体与枚举会递归展开</sub>
+</p>
+
+### 快速导航
+
+使用 `Ctrl/Cmd + K` 可同时搜索接口名称、路径、Controller、实体和枚举，并直接跳转到目标文档。
+
+<p align="center">
+  <img src="doc/3.png" alt="跨接口与实体快速导航" />
+  <br/>
+  <sub>跨接口与实体的快速导航</sub>
+</p>
+
+### 实体与枚举
+
+- 独立的实体导航视图，支持按名称和包名搜索
+- 递归展示嵌套子实体、集合泛型和枚举值
+- 展示实体被哪些接口引用，并支持反向跳转
+
+<p align="center">
+  <img src="doc/4.png" alt="实体与枚举详情" />
+  <br/>
+  <sub>实体、枚举值及接口引用关系</sub>
+</p>
+
 ### 调试模式
 - 选择 HTTP 方法，输入 URL
 - 自定义 Params、Headers、Body
 - 发送请求查看响应
 - 支持 SSE（Server-Sent Events）
 - 编辑的内容自动保存，刷新不丢失
+
+<p align="center">
+  <img src="doc/5.png" alt="Debug 模式接口调试工作区" />
+  <br/>
+  <sub>在 Debug 模式中编辑请求参数并查看实时响应</sub>
+</p>
 
 ## 项目结构
 

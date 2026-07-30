@@ -19,7 +19,7 @@
 
 <p align="center">
   Extract API docs directly from Javadoc and source comments — no annotation invasion required.<br/>
-  Includes a Postman-style Web UI for browsing documentation and debugging APIs.
+  Includes a compact IDEA-inspired Web UI for browsing APIs, exploring entities, and debugging requests.
 </p>
 
 <p align="center">
@@ -33,7 +33,9 @@
 ---
 
 <p align="center">
-  <img src="doc/1.png" alt="UI" />
+  <img src="doc/1.png" alt="Marginalia controller and endpoint overview" />
+  <br/>
+  <sub>Controller and endpoint overview</sub>
 </p>
 
 ---
@@ -42,7 +44,7 @@
 
 - **Zero Annotation Invasion** — No extra annotations needed; extracts docs from Javadoc, line comments, and Swagger annotations
 - **Priority Chain** — Javadoc > Line Comments > Swagger Annotations > Method Signature
-- **Built-in Web UI** — Postman-style interface with Document mode and Debug mode
+- **Built-in Web UI** — Compact IDEA-inspired interface with Document and Debug modes
 - **API Debugger** — Built-in HTTP client for sending requests, custom headers/params, response viewing, and SSE support
 - **Entity Auto-Discovery** — Automatically discovers entity classes from request/response body types with full field structure
 - **Field-Level Merge** — User edits are preserved across re-scans
@@ -109,12 +111,46 @@ marginalia:
 - Response body (with entity field-level display + JSON example)
 - Clickable entity names that navigate to entity detail pages
 
+<p align="center">
+  <img src="doc/2.png" alt="Nested entity and enum documentation" />
+  <br/>
+  <sub>Nested entities and enums are expanded recursively in request bodies</sub>
+</p>
+
+### Quick Navigation
+
+Press `Ctrl/Cmd + K` to search endpoint names, paths, controllers, entities, and enums from one place, then jump directly to the selected documentation.
+
+<p align="center">
+  <img src="doc/3.png" alt="Quick navigation across endpoints and entities" />
+  <br/>
+  <sub>Quick navigation across endpoints and entities</sub>
+</p>
+
+### Entities & Enums
+
+- Dedicated entity navigator with name and package search
+- Recursive rendering for nested models, collection generics, and enum values
+- Reverse references showing which endpoints use each entity
+
+<p align="center">
+  <img src="doc/4.png" alt="Entity and enum details" />
+  <br/>
+  <sub>Entity fields, enum values, and endpoint references</sub>
+</p>
+
 ### Debug Mode
 - Select HTTP method and enter URL
 - Custom Params, Headers, and Body
 - Send requests and view responses
 - SSE (Server-Sent Events) support
 - Edits auto-saved; persist across page refreshes
+
+<p align="center">
+  <img src="doc/5.png" alt="API debugging workspace in Debug mode" />
+  <br/>
+  <sub>Edit request parameters and inspect live responses in Debug mode</sub>
+</p>
 
 ## Project Structure
 
