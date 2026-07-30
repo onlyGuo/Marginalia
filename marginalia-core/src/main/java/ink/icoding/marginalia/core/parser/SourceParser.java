@@ -631,7 +631,17 @@ public class SourceParser {
         String tag = extractAnnotationValue(method, "Operation", "summary");
         if (tag != null) return tag;
 
-        // Use first line of description if it's short enough
+        // Javadoc may contain a short summary followed by a much longer description.
+        String javadocSummary = method.getJavadocComment()
+                .map(JavadocComment::getContent)
+                .map(this::cleanJavadoc)
+                .map(this::extractSummary)
+                .orElse(null);
+        if (javadocSummary != null && !javadocSummary.isBlank()) {
+            return javadocSummary;
+        }
+
+        // Preserve the existing behavior for line comments and Swagger descriptions.
         if (description != null && description.length() <= 50 && !description.contains("\n")) {
             return description;
         }
@@ -884,6 +894,38 @@ public class SourceParser {
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.joining("\n"))
                 .trim();
+    }
+
+    private String extractSummary(String description) {
+        if (description == null || description.isBlank()) return null;
+
+        // Treat an HTML paragraph as a Javadoc summary boundary while also supporting
+        // comments whose first paragraph itself starts with <p>.
+        String[] paragraphs = description.trim().split("(?i)\\s*<p(?:\\s+[^>]*)?>\\s*", -1);
+        String candidate = paragraphs[0].isBlank() && paragraphs.length > 1
+                ? paragraphs[1]
+                : paragraphs[0];
+        int closingParagraph = candidate.toLowerCase(Locale.ROOT).indexOf("</p>");
+        if (closingParagraph >= 0) {
+            candidate = candidate.substring(0, closingParagraph);
+        }
+
+        candidate = candidate
+                .replaceAll("\\{@\\w+\\s+([^}]*)}", "$1")
+                .replaceAll("<[^>]+>", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (candidate.isEmpty()) return null;
+
+        for (int i = 0; i < candidate.length(); i++) {
+            char ch = candidate.charAt(i);
+            if (ch == '。' || ch == '！' || ch == '？' ||
+                    ((ch == '.' || ch == '!' || ch == '?') &&
+                            (i + 1 == candidate.length() || Character.isWhitespace(candidate.charAt(i + 1))))) {
+                return candidate.substring(0, i + 1).trim();
+            }
+        }
+        return candidate;
     }
 
     private String combinePaths(String base, String method) {
