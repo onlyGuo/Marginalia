@@ -1096,6 +1096,11 @@ function renderDocView(area, api) {
         html += renderParamTable('Query Parameters', api.queryParams);
     }
 
+    // Form Params
+    if (api.formParams && api.formParams.length) {
+        html += renderParamTable('Form Parameters', api.formParams);
+    }
+
     // Header Params
     if (api.headerParams && api.headerParams.length) {
         html += renderParamTable('Header Parameters', api.headerParams);
@@ -1377,9 +1382,11 @@ function renderDebugView(area, api) {
     // Build persisted params map (debug params override API params)
     const persistedParams = api.debugParams || {};
     const persistedParamDescs = api.debugParamDescs || {};
-    // Merge: start with API queryParams, then overlay debug params
+    // Merge declared form/query params, then overlay persisted debug values.
+    // Explicit query params win when a ModelAttribute field has the same name.
     const mergedParams = {};
-    if (api.queryParams) api.queryParams.forEach(p => {
+    const declaredParams = [...(api.formParams || []), ...(api.queryParams || [])];
+    declaredParams.forEach(p => {
         const val = persistedParams.hasOwnProperty(p.name) ? persistedParams[p.name] : (p.defaultValue || p.example || '');
         const desc = persistedParamDescs.hasOwnProperty(p.name) ? persistedParamDescs[p.name] : (p.description || '');
         mergedParams[p.name] = { value: val, description: desc };

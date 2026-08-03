@@ -59,7 +59,7 @@
 <dependency>
     <groupId>ink.icoding</groupId>
     <artifactId>marginalia-spring-boot-starter</artifactId>
-    <version>1.1.2</version><!-- version -->
+    <version>1.1.3</version><!-- version -->
 </dependency>
 ```
 

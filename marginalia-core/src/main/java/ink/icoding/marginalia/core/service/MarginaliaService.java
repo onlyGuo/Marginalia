@@ -147,6 +147,8 @@ public class MarginaliaService {
         // Parse the controller file to get its CompilationUnit (for import resolution)
         CompilationUnit cu = parser.parseFile(sourceFile);
 
+        expandModelAttributeParams(api, sourceFile, cu, entities);
+
         // Extract from request body
         if (api.getRequestBody() != null && api.getRequestBody().getFullType() != null) {
             String type = api.getRequestBody().getFullType();
@@ -173,6 +175,36 @@ public class MarginaliaService {
         } else if (api.getResponse() != null) {
             log.info("extractEntities [{}]: response fullType is NULL, type='{}'", api.getPath(), api.getResponse().getType());
         }
+    }
+
+    private void expandModelAttributeParams(ApiDoc api, Path sourceFile, CompilationUnit cu,
+                                            Map<String, EntityDoc> entities) {
+        if (api.getFormParams() == null || api.getFormParams().isEmpty()) return;
+
+        List<EndpointParam> expandedFormParams = new ArrayList<>();
+        for (EndpointParam modelParam : api.getFormParams()) {
+            String type = modelParam.getFullType() != null ? modelParam.getFullType() : modelParam.getType();
+            discoverEntity(type, sourceFile, cu, entities, 0);
+
+            EntityDoc entity = resolveCachedFieldEntity(type, entities);
+            if (entity == null || entity.isEnum() || entity.getFields() == null || entity.getFields().isEmpty()) {
+                expandedFormParams.add(modelParam);
+                continue;
+            }
+
+            for (FieldDoc field : entity.getFields()) {
+                expandedFormParams.add(EndpointParam.builder()
+                        .name(field.getName())
+                        .type(field.getType())
+                        .fullType(field.getFullType())
+                        .description(field.getDescription())
+                        .required(false)
+                        .example(field.getExample())
+                        .build());
+            }
+        }
+
+        api.setFormParams(expandedFormParams);
     }
 
     private EntityDoc findCachedEntity(String simpleName, Map<String, EntityDoc> entities) {
