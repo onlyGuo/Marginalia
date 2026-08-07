@@ -3,6 +3,7 @@ package ink.icoding.marginalia.core.parser;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.comments.Comment;
 import com.github.javaparser.ast.comments.JavadocComment;
@@ -12,6 +13,7 @@ import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.nodeTypes.NodeWithJavadoc;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
+import com.github.javaparser.javadoc.JavadocBlockTag;
 import ink.icoding.marginalia.core.model.*;
 import ink.icoding.marginalia.core.util.SignatureUtil;
 import org.slf4j.Logger;
@@ -385,7 +387,7 @@ public class SourceParser {
     private FieldDoc parseRecordComponent(RecordDeclaration record,
                                            com.github.javaparser.ast.body.Parameter component,
                                            CompilationUnit cu) {
-        String description = extractRecordComponentDescription(record, component.getNameAsString());
+        String description = extractRecordComponentDescription(record, component);
         if (description == null || description.isEmpty()) {
             description = extractSwaggerDescription(component);
         }
@@ -569,26 +571,13 @@ public class SourceParser {
      * Extract description with priority: Javadoc > line comment > Swagger > null
      */
     private String extractDescription(NodeWithAnnotations<?> node) {
-        // 1. Try Javadoc
-        if (node instanceof NodeWithJavadoc<?> javadocNode) {
-            Optional<JavadocComment> javadoc = javadocNode.getJavadocComment();
-            if (javadoc.isPresent()) {
-                return cleanJavadoc(javadoc.get().getContent());
-            }
-        }
-        // 2. Try preceding line comments
-        if (node instanceof BodyDeclaration<?> body) {
-            for (Comment comment : body.getAllContainedComments()) {
-                if (comment.isLineComment()) {
-                    String text = comment.getContent().trim();
-                    if (!text.startsWith("@")) {
-                        return text;
-                    }
-                }
-            }
+        // 1. Try an associated Javadoc, block comment, line comment, or inline comment.
+        if (node instanceof Node astNode) {
+            String comment = extractNodeComment(astNode);
+            if (comment != null && !comment.isBlank()) return comment;
         }
 
-        // 3. Try Swagger annotations
+        // 2. Try Swagger annotations
         String swaggerDesc = extractSwaggerDescription(node);
         if (swaggerDesc != null) return swaggerDesc;
 
@@ -596,30 +585,15 @@ public class SourceParser {
     }
 
     private String extractMethodDescription(MethodDeclaration method) {
-        // 1. Javadoc
-        Optional<JavadocComment> javadoc = method.getJavadocComment();
-        if (javadoc.isPresent()) {
-            return cleanJavadoc(javadoc.get().getContent());
-        }
+        // 1. Javadoc, block comment, line comment, or inline comment
+        String comment = extractNodeComment(method);
+        if (comment != null && !comment.isBlank()) return comment;
 
-        // 2. Line comment above the method
-        for (Comment comment : method.getAllContainedComments()) {
-            if (comment.isLineComment()) {
-                String text = comment.getContent().trim();
-                if (!text.startsWith("@")) return text;
-            }
-        }
-
-        // Also check comments on the method itself
-        method.getComment().ifPresent(c -> {
-            // already checked above via getAllContainedComments
-        });
-
-        // 3. Swagger
+        // 2. Swagger
         String swagger = extractSwaggerDescription(method);
         if (swagger != null) return swagger;
 
-        // 4. Fallback to method name
+        // 3. Fallback to method name
         return method.getNameAsString();
     }
 
@@ -654,21 +628,7 @@ public class SourceParser {
         // Check Javadoc @param tags on the parent method
         if (param.getParentNode().isPresent() &&
                 param.getParentNode().get() instanceof MethodDeclaration method) {
-            Optional<JavadocComment> javadoc = method.getJavadocComment();
-            if (javadoc.isPresent()) {
-                String paramName = param.getNameAsString();
-                String docContent = javadoc.get().getContent();
-                // Parse @param tags
-                for (String line : docContent.split("\n")) {
-                    String trimmed = line.trim();
-                    if (trimmed.startsWith("@param")) {
-                        String[] parts = trimmed.substring(6).trim().split("\\s+", 2);
-                        if (parts.length >= 2 && parts[0].equals(paramName)) {
-                            return parts[1].trim();
-                        }
-                    }
-                }
-            }
+            return extractJavadocParamDescription(method, param.getNameAsString());
         }
         return null;
     }
@@ -684,33 +644,187 @@ public class SourceParser {
     }
 
     private String extractEnumValueDescription(EnumConstantDeclaration entry) {
-        Optional<JavadocComment> javadoc = entry.getJavadocComment();
-        if (javadoc.isPresent()) {
-            return cleanJavadoc(javadoc.get().getContent());
-        }
+        String comment = extractNodeComment(entry);
+        if (comment != null && !comment.isBlank()) return comment;
         String swaggerDesc = extractSwaggerDescription(entry);
         if (swaggerDesc != null) return swaggerDesc;
-        return entry.getComment()
-                .map(Comment::getContent)
-                .map(String::trim)
-                .filter(text -> !text.isEmpty())
-                .orElse(null);
+        return null;
     }
 
-    private String extractRecordComponentDescription(RecordDeclaration record, String componentName) {
-        Optional<JavadocComment> javadoc = record.getJavadocComment();
-        if (javadoc.isEmpty()) return null;
+    private String extractRecordComponentDescription(RecordDeclaration record,
+                                                     com.github.javaparser.ast.body.Parameter component) {
+        String componentComment = extractNodeComment(component);
+        if (componentComment != null && !componentComment.isBlank()) return componentComment;
+        return extractJavadocParamDescription(record, component.getNameAsString());
+    }
 
-        for (String line : javadoc.get().getContent().split("\\n")) {
-            String trimmed = line.trim();
-            if (trimmed.startsWith("*")) trimmed = trimmed.substring(1).trim();
-            if (!trimmed.startsWith("@param")) continue;
-            String[] parts = trimmed.substring(6).trim().split("\\s+", 2);
-            if (parts.length == 2 && parts[0].equals(componentName)) {
-                return parts[1].trim();
+    private String extractJavadocParamDescription(NodeWithJavadoc<?> owner, String parameterName) {
+        try {
+            Optional<String> parsed = owner.getJavadoc().stream()
+                    .flatMap(javadoc -> javadoc.getBlockTags().stream())
+                    .filter(tag -> "param".equals(tag.getTagName()))
+                    .filter(tag -> tag.getName().filter(parameterName::equals).isPresent())
+                    .map(JavadocBlockTag::getContent)
+                    .map(content -> normalizeCommentDescription(content.toText()))
+                    .filter(text -> !text.isEmpty())
+                    .findFirst();
+            if (parsed.isPresent()) return parsed.get();
+        } catch (RuntimeException e) {
+            log.debug("Unable to parse Javadoc @param '{}' structurally", parameterName, e);
+        }
+
+        // Tolerate malformed Javadocs and preserve continuation lines until the next block tag.
+        Optional<JavadocComment> javadoc = owner.getJavadocComment();
+        if (javadoc.isEmpty()) return null;
+        StringBuilder description = new StringBuilder();
+        boolean matchingParam = false;
+        for (String line : javadoc.get().getContent().split("\\R")) {
+            String trimmed = stripCommentLinePrefix(line);
+            if (trimmed.startsWith("@")) {
+                matchingParam = false;
+                if (trimmed.startsWith("@param")) {
+                    String[] parts = trimmed.substring(6).trim().split("\\s+", 2);
+                    matchingParam = parts.length > 0 && parameterName.equals(parts[0]);
+                    if (matchingParam && parts.length == 2) description.append(parts[1]);
+                }
+            } else if (matchingParam && !trimmed.isEmpty()) {
+                if (!description.isEmpty()) description.append(' ');
+                description.append(trimmed);
             }
         }
-        return null;
+        String fallback = normalizeCommentDescription(description.toString());
+        return fallback.isEmpty() ? null : fallback;
+    }
+
+    private String extractNodeComment(Node node) {
+        List<Comment> candidates = new ArrayList<>();
+        node.getComment().ifPresent(candidates::add);
+
+        node.findCompilationUnit().ifPresent(cu -> {
+            for (Comment comment : cu.getAllComments()) {
+                boolean ownedByNode = comment.getCommentedNode()
+                        .map(commentedNode -> isCommentOwner(commentedNode, node))
+                        .orElse(false);
+                boolean adjacentOrphan = comment.getCommentedNode().isEmpty() &&
+                        isAdjacentComment(comment, node);
+                if ((ownedByNode || adjacentOrphan) && !candidates.contains(comment)) {
+                    candidates.add(comment);
+                }
+            }
+        });
+
+        if (candidates.isEmpty()) return null;
+        candidates.sort(Comparator
+                .comparingInt(this::commentPriority)
+                .thenComparingInt(comment -> commentDistance(comment, node)));
+        return cleanNodeComment(node, candidates.get(0));
+    }
+
+    private boolean isCommentOwner(Node commentedNode, Node documentedNode) {
+        if (commentedNode == documentedNode) return true;
+
+        // JavaParser can attach a declaration comment to an annotation/type child.
+        // Only leaf-like declarations may inherit such comments; containers must not
+        // consume comments from their methods, fields, or statements.
+        if (!(documentedNode instanceof com.github.javaparser.ast.body.Parameter) &&
+                !(documentedNode instanceof FieldDeclaration) &&
+                !(documentedNode instanceof EnumConstantDeclaration)) {
+            return false;
+        }
+
+        Node current = commentedNode;
+        while (current.getParentNode().isPresent()) {
+            current = current.getParentNode().get();
+            if (current == documentedNode) return true;
+            if (current instanceof BodyDeclaration<?>) return false;
+        }
+        return false;
+    }
+
+    private boolean isAdjacentComment(Comment comment, Node node) {
+        if (comment.getRange().isEmpty() || node.getRange().isEmpty()) return false;
+        var commentRange = comment.getRange().get();
+        var nodeRange = node.getRange().get();
+
+        boolean immediatelyBefore = commentRange.end.line == nodeRange.begin.line - 1 ||
+                (commentRange.end.line == nodeRange.begin.line &&
+                        commentRange.end.column < nodeRange.begin.column);
+        boolean trailingOnSameLine = commentRange.begin.line == nodeRange.end.line &&
+                commentRange.begin.column > nodeRange.end.column;
+        return immediatelyBefore || trailingOnSameLine;
+    }
+
+    private int commentPriority(Comment comment) {
+        if (comment.isJavadocComment()) return 0;
+        if (comment.isBlockComment()) return 1;
+        return 2;
+    }
+
+    private int commentDistance(Comment comment, Node node) {
+        if (comment.getRange().isEmpty() || node.getRange().isEmpty()) return Integer.MAX_VALUE;
+        var commentRange = comment.getRange().get();
+        var nodeRange = node.getRange().get();
+        if (commentRange.end.line <= nodeRange.begin.line) {
+            return nodeRange.begin.line - commentRange.end.line;
+        }
+        return commentRange.begin.line - nodeRange.end.line;
+    }
+
+    private String cleanNodeComment(Node node, Comment selected) {
+        if (!selected.isLineComment() || selected.getRange().isEmpty() || node.getRange().isEmpty() ||
+                selected.getRange().get().end.line >= node.getRange().get().begin.line) {
+            return cleanSingleComment(selected);
+        }
+
+        List<Comment> lineComments = node.findCompilationUnit().stream()
+                .flatMap(cu -> cu.getAllComments().stream())
+                .filter(Comment::isLineComment)
+                .filter(comment -> comment.getRange().isPresent())
+                .filter(comment -> comment.getRange().get().end.line <= node.getRange().get().begin.line)
+                .filter(comment -> comment.getCommentedNode()
+                        .map(commentedNode -> isCommentOwner(commentedNode, node))
+                        .orElse(true))
+                .sorted(Comparator.comparingInt(comment -> comment.getRange().get().begin.line))
+                .toList();
+
+        int selectedIndex = lineComments.indexOf(selected);
+        if (selectedIndex < 0) return cleanSingleComment(selected);
+        int firstIndex = selectedIndex;
+        while (firstIndex > 0) {
+            Comment previous = lineComments.get(firstIndex - 1);
+            Comment current = lineComments.get(firstIndex);
+            if (previous.getRange().get().end.line + 1 != current.getRange().get().begin.line) break;
+            firstIndex--;
+        }
+
+        return lineComments.subList(firstIndex, selectedIndex + 1).stream()
+                .map(this::cleanSingleComment)
+                .filter(text -> text != null && !text.isBlank())
+                .collect(Collectors.joining(" "));
+    }
+
+    private String cleanSingleComment(Comment comment) {
+        String content;
+        if (comment.isJavadocComment()) {
+            content = cleanJavadoc(comment.getContent());
+        } else if (comment.isBlockComment()) {
+            content = Arrays.stream(comment.getContent().split("\\R"))
+                    .map(this::stripCommentLinePrefix)
+                    .filter(line -> !line.isEmpty())
+                    .collect(Collectors.joining(" "));
+        } else {
+            content = comment.getContent().trim();
+        }
+        return normalizeCommentDescription(content);
+    }
+
+    private String stripCommentLinePrefix(String line) {
+        String trimmed = line.trim();
+        return trimmed.startsWith("*") ? trimmed.substring(1).trim() : trimmed;
+    }
+
+    private String normalizeCommentDescription(String description) {
+        return description == null ? "" : description.replaceAll("\\s+", " ").trim();
     }
 
     // ---- Swagger Annotation Helpers ----
