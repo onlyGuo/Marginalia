@@ -35,6 +35,10 @@ public class EntityDoc {
     @Builder.Default
     private List<FieldDoc> fields = new ArrayList<>();
 
+    /** Generic type parameter names in declaration order, e.g. T, K, V */
+    @Builder.Default
+    private List<String> typeParameters = new ArrayList<>();
+
     /** Super class name if any */
     private String superClass;
 

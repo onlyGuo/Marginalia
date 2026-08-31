@@ -503,6 +503,7 @@ public class PersistenceManager {
         EntityDoc.EntityDocBuilder merged = EntityDoc.builder()
                 .name(generated.getName())
                 .fullName(generated.getFullName())
+                .typeParameters(generated.getTypeParameters())
                 .isEnum(generated.isEnum())
                 .enumValues(generated.getEnumValues())
                 .enumValueDocs(generated.getEnumValueDocs())

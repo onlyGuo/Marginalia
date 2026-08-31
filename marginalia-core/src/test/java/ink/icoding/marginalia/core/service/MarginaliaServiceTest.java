@@ -156,6 +156,57 @@ class MarginaliaServiceTest {
         assertEquals(prefix + ".DepartmentOpinions", approvalFields.get("departmentOpinions").getEntityRef());
     }
 
+    @Test
+    void discoversGenericResponseWrapperAndConcreteRowEntity() throws Exception {
+        Path sourceRoot = tempDir.resolve("generic/src/main/java");
+        writeSource(sourceRoot, "example/controller/FavoriteController.java", """
+                package example.controller;
+
+                import example.model.TableData;
+                import example.vo.FavoriteItem;
+
+                @RestController
+                class FavoriteController {
+                    @GetMapping("/favorites")
+                    public TableData<FavoriteItem> favorites() {
+                        return null;
+                    }
+                }
+                """);
+        writeSource(sourceRoot, "example/model/TableData.java", """
+                package example.model;
+
+                import java.util.List;
+
+                public class TableData<T> {
+                    /** 当前页数据列表。 */
+                    private List<T> rows;
+                    /** 符合条件的数据总数。 */
+                    private long total;
+                }
+                """);
+        writeSource(sourceRoot, "example/vo/FavoriteItem.java", """
+                package example.vo;
+
+                public record FavoriteItem(Long id, String name) {}
+                """);
+
+        MarginaliaService service = new MarginaliaService(
+                tempDir.resolve("generic/docs").toString(), "example", List.of(sourceRoot.toString()));
+        service.scanAndMerge();
+
+        ApiDoc api = service.getAllControllers().get(0).getApis().get(0);
+        assertEquals("example.model.TableData<example.vo.FavoriteItem>", api.getResponse().getFullType());
+        assertEquals("example.model.TableData", api.getResponse().getEntityRef());
+
+        Map<String, EntityDoc> entities = service.getAllEntities().stream()
+                .collect(Collectors.toMap(EntityDoc::getFullName, Function.identity()));
+        EntityDoc tableData = entities.get("example.model.TableData");
+        assertEquals(List.of("T"), tableData.getTypeParameters());
+        assertEquals("java.util.List<T>", tableData.getFields().get(0).getFullType());
+        assertTrue(entities.containsKey("example.vo.FavoriteItem"));
+    }
+
     private void writeSource(Path sourceRoot, String relativePath, String content) throws Exception {
         Path file = sourceRoot.resolve(relativePath);
         Files.createDirectories(file.getParent());

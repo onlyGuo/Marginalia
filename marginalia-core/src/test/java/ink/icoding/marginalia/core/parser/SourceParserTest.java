@@ -189,6 +189,23 @@ class SourceParserTest {
                 fieldsByName(approval).get("procurement").getFullType());
     }
 
+    @Test
+    void preservesGenericTypeVariablesInEntityFields() {
+        EntityDoc entity = new SourceParser().parseEntityFromContent("""
+                package example.model;
+
+                import java.util.List;
+
+                public class TableData<T> {
+                    private List<T> rows;
+                    private long total;
+                }
+                """, "TableData");
+
+        assertEquals(List.of("T"), entity.getTypeParameters());
+        assertEquals("java.util.List<T>", fieldsByName(entity).get("rows").getFullType());
+    }
+
     private Map<String, FieldDoc> fieldsByName(EntityDoc entity) {
         return entity.getFields().stream()
                 .collect(Collectors.toMap(FieldDoc::getName, Function.identity()));

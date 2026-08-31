@@ -11,6 +11,7 @@ import com.github.javaparser.ast.comments.LineComment;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.nodeTypes.NodeWithJavadoc;
+import com.github.javaparser.ast.nodeTypes.NodeWithTypeParameters;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.javadoc.JavadocBlockTag;
@@ -357,6 +358,9 @@ public class SourceParser {
                 .fullName(fullName)
                 .description(description)
                 .fields(fields)
+                .typeParameters(clazz.getTypeParameters().stream()
+                        .map(parameter -> parameter.getNameAsString())
+                        .toList())
                 .superClass(superClass)
                 .isEnum(false)
                 .build();
@@ -372,6 +376,9 @@ public class SourceParser {
                 .fullName(getFullyQualifiedClassName(record, cu))
                 .description(extractDescription(record))
                 .fields(fields)
+                .typeParameters(record.getTypeParameters().stream()
+                        .map(parameter -> parameter.getNameAsString())
+                        .toList())
                 .isEnum(false)
                 .build();
     }
@@ -969,6 +976,7 @@ public class SourceParser {
     private String resolveClassOrInterfaceTypeName(ClassOrInterfaceType type, CompilationUnit cu) {
         String sourceName = type.getNameWithScope();
         if (cu == null) return sourceName;
+        if (isTypeVariable(type, sourceName)) return sourceName;
 
         TypeDeclaration<?> localType = findVisibleLocalType(cu, sourceName, type);
         if (localType != null) {
@@ -992,6 +1000,21 @@ public class SourceParser {
             return cu.getPackageDeclaration().get().getNameAsString() + "." + sourceName;
         }
         return sourceName;
+    }
+
+    private boolean isTypeVariable(ClassOrInterfaceType type, String sourceName) {
+        if (sourceName.contains(".")) return false;
+        Node current = type;
+        while (true) {
+            if (current instanceof NodeWithTypeParameters<?> owner &&
+                    owner.getTypeParameters().stream()
+                            .anyMatch(parameter -> parameter.getNameAsString().equals(sourceName))) {
+                return true;
+            }
+            Optional<Node> parent = current.getParentNode();
+            if (parent.isEmpty()) return false;
+            current = parent.get();
+        }
     }
 
     private TypeDeclaration<?> findVisibleLocalType(CompilationUnit cu, String sourceName, Node context) {
