@@ -159,6 +159,36 @@ class SourceParserTest {
         assertEquals("status", api.getDescription());
     }
 
+    @Test
+    void resolvesNestedRecordNamesAndFieldTypes() {
+        String source = """
+                package example.vo;
+
+                public record BusinessInformation(
+                        ContractInformation contract,
+                        ApprovalInformation approval
+                ) {
+                    public record ContractInformation(String projectName) {}
+
+                    public record ApprovalInformation(ProcurementInformation procurement) {}
+
+                    public record ProcurementInformation(String batchNumber) {}
+                }
+                """;
+        SourceParser parser = new SourceParser();
+
+        EntityDoc outer = parser.parseEntityFromContent(source, "BusinessInformation");
+        EntityDoc approval = parser.parseEntityFromContent(
+                source, "example.vo.BusinessInformation.ApprovalInformation");
+
+        assertEquals("example.vo.BusinessInformation", outer.getFullName());
+        assertEquals("example.vo.BusinessInformation.ContractInformation",
+                fieldsByName(outer).get("contract").getFullType());
+        assertEquals("example.vo.BusinessInformation.ApprovalInformation", approval.getFullName());
+        assertEquals("example.vo.BusinessInformation.ProcurementInformation",
+                fieldsByName(approval).get("procurement").getFullType());
+    }
+
     private Map<String, FieldDoc> fieldsByName(EntityDoc entity) {
         return entity.getFields().stream()
                 .collect(Collectors.toMap(FieldDoc::getName, Function.identity()));

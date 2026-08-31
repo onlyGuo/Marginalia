@@ -252,25 +252,7 @@ public class SourceParser {
         try {
             String content = Files.readString(file);
             CompilationUnit cu = StaticJavaParser.parse(content);
-
-            for (ClassOrInterfaceDeclaration clazz : cu.findAll(ClassOrInterfaceDeclaration.class)) {
-                if (clazz.getNameAsString().equals(SignatureUtil.simpleClassName(entityClassName))) {
-                    return parseEntityClass(clazz, cu);
-                }
-            }
-
-            for (RecordDeclaration record : cu.findAll(RecordDeclaration.class)) {
-                if (record.getNameAsString().equals(SignatureUtil.simpleClassName(entityClassName))) {
-                    return parseRecordClass(record, cu);
-                }
-            }
-
-            // Check enums
-            for (EnumDeclaration enumDecl : cu.findAll(EnumDeclaration.class)) {
-                if (enumDecl.getNameAsString().equals(SignatureUtil.simpleClassName(entityClassName))) {
-                    return parseEnumClass(enumDecl, cu);
-                }
-            }
+            return parseEntityFromCu(cu, entityClassName);
         } catch (Exception e) {
             log.error("Error parsing entity file: {}", file, e);
         }
@@ -293,23 +275,33 @@ public class SourceParser {
     /**
      * Parse an entity class from an already-parsed CompilationUnit.
      */
-    public EntityDoc parseEntityFromCu(CompilationUnit cu, String simpleClassName) {
-        for (ClassOrInterfaceDeclaration clazz : cu.findAll(ClassOrInterfaceDeclaration.class)) {
-            if (clazz.getNameAsString().equals(simpleClassName)) {
-                return parseEntityClass(clazz, cu);
-            }
+    public EntityDoc parseEntityFromCu(CompilationUnit cu, String entityClassName) {
+        TypeDeclaration<?> declaration = findTypeDeclaration(cu, entityClassName);
+        if (declaration instanceof ClassOrInterfaceDeclaration clazz) {
+            return parseEntityClass(clazz, cu);
         }
-        for (RecordDeclaration record : cu.findAll(RecordDeclaration.class)) {
-            if (record.getNameAsString().equals(simpleClassName)) {
-                return parseRecordClass(record, cu);
-            }
+        if (declaration instanceof RecordDeclaration record) {
+            return parseRecordClass(record, cu);
         }
-        for (EnumDeclaration enumDecl : cu.findAll(EnumDeclaration.class)) {
-            if (enumDecl.getNameAsString().equals(simpleClassName)) {
-                return parseEnumClass(enumDecl, cu);
-            }
+        if (declaration instanceof EnumDeclaration enumDecl) {
+            return parseEnumClass(enumDecl, cu);
         }
         return null;
+    }
+
+    /**
+     * Return all class, record, and enum names declared by a source file, including nested types.
+     */
+    public List<String> findDeclaredEntityTypes(Path file) {
+        try {
+            CompilationUnit cu = StaticJavaParser.parse(file);
+            return supportedTypeDeclarations(cu).stream()
+                    .map(declaration -> getFullyQualifiedClassName(declaration, cu))
+                    .toList();
+        } catch (Exception e) {
+            log.debug("Unable to index declarations in source file: {}", file, e);
+            return List.of();
+        }
     }
 
     /**
@@ -956,17 +948,7 @@ public class SourceParser {
 
     private String resolveFullType(Type type, CompilationUnit cu) {
         if (type instanceof ClassOrInterfaceType cit) {
-            String name = cit.getNameAsString();
-            // Resolve outer type from imports
-            String resolvedName = name;
-            if (cu != null) {
-                for (var imp : cu.getImports()) {
-                    if (!imp.isAsterisk() && imp.getNameAsString().endsWith("." + name)) {
-                        resolvedName = imp.getNameAsString();
-                        break;
-                    }
-                }
-            }
+            String resolvedName = resolveClassOrInterfaceTypeName(cit, cu);
             // Recursively resolve generic type arguments
             if (cit.getTypeArguments().isPresent()) {
                 List<String> resolvedArgs = new ArrayList<>();
@@ -984,16 +966,138 @@ public class SourceParser {
         return type.asString();
     }
 
-    private String getFullyQualifiedClassName(BodyDeclaration<?> clazz, CompilationUnit cu) {
-        String simpleName = "";
-        if (clazz instanceof ClassOrInterfaceDeclaration c) simpleName = c.getNameAsString();
-        else if (clazz instanceof EnumDeclaration e) simpleName = e.getNameAsString();
-        else if (clazz instanceof RecordDeclaration r) simpleName = r.getNameAsString();
+    private String resolveClassOrInterfaceTypeName(ClassOrInterfaceType type, CompilationUnit cu) {
+        String sourceName = type.getNameWithScope();
+        if (cu == null) return sourceName;
 
-        if (cu.getPackageDeclaration().isPresent()) {
-            return cu.getPackageDeclaration().get().getNameAsString() + "." + simpleName;
+        TypeDeclaration<?> localType = findVisibleLocalType(cu, sourceName, type);
+        if (localType != null) {
+            return getFullyQualifiedClassName(localType, cu);
         }
-        return simpleName;
+
+        String firstSegment = sourceName.contains(".")
+                ? sourceName.substring(0, sourceName.indexOf('.'))
+                : sourceName;
+        for (var imp : cu.getImports()) {
+            if (imp.isAsterisk()) continue;
+            String importedName = imp.getNameAsString();
+            if (importedName.endsWith("." + sourceName)) return importedName;
+            if (sourceName.contains(".") && importedName.endsWith("." + firstSegment)) {
+                return importedName + sourceName.substring(firstSegment.length());
+            }
+        }
+
+        if (!isSimpleType(sourceName) && cu.getPackageDeclaration().isPresent() &&
+                Character.isUpperCase(firstSegment.charAt(0))) {
+            return cu.getPackageDeclaration().get().getNameAsString() + "." + sourceName;
+        }
+        return sourceName;
+    }
+
+    private TypeDeclaration<?> findVisibleLocalType(CompilationUnit cu, String sourceName, Node context) {
+        String simpleName = SignatureUtil.simpleClassName(sourceName);
+        List<TypeDeclaration<?>> candidates = supportedTypeDeclarations(cu).stream()
+                .filter(declaration -> declaration.getNameAsString().equals(simpleName))
+                .toList();
+        if (candidates.isEmpty()) return null;
+
+        String packageName = cu.getPackageDeclaration()
+                .map(declaration -> declaration.getNameAsString() + ".")
+                .orElse("");
+        for (TypeDeclaration<?> candidate : candidates) {
+            String fullName = getFullyQualifiedClassName(candidate, cu);
+            String relativeName = fullName.startsWith(packageName)
+                    ? fullName.substring(packageName.length())
+                    : fullName;
+            if (relativeName.equals(sourceName) || fullName.equals(sourceName)) return candidate;
+        }
+
+        List<String> contextPath = enclosingTypePath(context);
+        return candidates.stream()
+                .filter(candidate -> sharesTopLevelType(candidate, contextPath))
+                .max(Comparator.comparingInt(candidate -> commonPrefixLength(
+                        enclosingTypePath(candidate.getParentNode().orElse(null)), contextPath)))
+                .orElse(candidates.size() == 1 ? candidates.get(0) : null);
+    }
+
+    private TypeDeclaration<?> findTypeDeclaration(CompilationUnit cu, String requestedName) {
+        if (cu == null || requestedName == null || requestedName.isBlank()) return null;
+        String normalizedName = requestedName.replace('$', '.');
+        String packageName = cu.getPackageDeclaration()
+                .map(declaration -> declaration.getNameAsString() + ".")
+                .orElse("");
+        List<TypeDeclaration<?>> declarations = supportedTypeDeclarations(cu);
+
+        for (TypeDeclaration<?> declaration : declarations) {
+            String fullName = getFullyQualifiedClassName(declaration, cu);
+            String relativeName = fullName.startsWith(packageName)
+                    ? fullName.substring(packageName.length())
+                    : fullName;
+            if (fullName.equals(normalizedName) || relativeName.equals(normalizedName)) {
+                return declaration;
+            }
+        }
+
+        String simpleName = SignatureUtil.simpleClassName(normalizedName);
+        return declarations.stream()
+                .filter(declaration -> declaration.getNameAsString().equals(simpleName))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private List<TypeDeclaration<?>> supportedTypeDeclarations(CompilationUnit cu) {
+        List<TypeDeclaration<?>> declarations = new ArrayList<>();
+        declarations.addAll(cu.findAll(ClassOrInterfaceDeclaration.class));
+        declarations.addAll(cu.findAll(RecordDeclaration.class));
+        declarations.addAll(cu.findAll(EnumDeclaration.class));
+        declarations.sort(Comparator.comparingInt(declaration -> declaration.getRange()
+                .map(range -> range.begin.line)
+                .orElse(Integer.MAX_VALUE)));
+        return declarations;
+    }
+
+    private List<String> enclosingTypePath(Node node) {
+        if (node == null) return List.of();
+        LinkedList<String> path = new LinkedList<>();
+        Node current = node;
+        while (true) {
+            if (current instanceof TypeDeclaration<?> declaration) {
+                path.addFirst(declaration.getNameAsString());
+            }
+            Optional<Node> parent = current.getParentNode();
+            if (parent.isEmpty()) break;
+            current = parent.get();
+        }
+        return path;
+    }
+
+    private boolean sharesTopLevelType(TypeDeclaration<?> candidate, List<String> contextPath) {
+        if (contextPath.isEmpty()) return false;
+        List<String> candidatePath = enclosingTypePath(candidate);
+        return !candidatePath.isEmpty() && candidatePath.get(0).equals(contextPath.get(0));
+    }
+
+    private int commonPrefixLength(List<String> first, List<String> second) {
+        int length = 0;
+        while (length < first.size() && length < second.size() &&
+                first.get(length).equals(second.get(length))) {
+            length++;
+        }
+        return length;
+    }
+
+    private String getFullyQualifiedClassName(BodyDeclaration<?> clazz, CompilationUnit cu) {
+        if (clazz instanceof TypeDeclaration<?> declaration) {
+            Optional<String> fullName = declaration.getFullyQualifiedName();
+            if (fullName.isPresent()) return fullName.get();
+
+            String relativeName = String.join(".", enclosingTypePath(declaration));
+            if (cu.getPackageDeclaration().isPresent()) {
+                return cu.getPackageDeclaration().get().getNameAsString() + "." + relativeName;
+            }
+            return relativeName;
+        }
+        return "";
     }
 
     private String cleanJavadoc(String content) {

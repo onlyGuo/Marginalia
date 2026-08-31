@@ -154,8 +154,7 @@ public class MarginaliaService {
             String type = api.getRequestBody().getFullType();
             discoverEntity(type, sourceFile, cu, entities, 0);
             // Set entity ref
-            String simpleType = extractInnermostSimpleType(type);
-            EntityDoc found = findCachedEntity(simpleType, entities);
+            EntityDoc found = resolveCachedFieldEntity(type, entities);
             if (found != null) {
                 api.getRequestBody().setEntityRef(found.getFullName());
             }
@@ -167,8 +166,7 @@ public class MarginaliaService {
             log.info("extractEntities [{}]: response fullType='{}', classes={}", api.getPath(), type, extractClassNames(type));
             discoverEntity(type, sourceFile, cu, entities, 0);
             // Set entity ref
-            String simpleType = extractInnermostSimpleType(type);
-            EntityDoc found = findCachedEntity(simpleType, entities);
+            EntityDoc found = resolveCachedFieldEntity(type, entities);
             if (found != null) {
                 api.getResponse().setEntityRef(found.getFullName());
             }
@@ -328,22 +326,6 @@ public class MarginaliaService {
     }
 
     /**
-     * Extract the innermost simple type from a generic type.
-     * "List<User>" -> "User", "ResponseEntity<User>" -> "User", "User" -> "User"
-     */
-    private String extractInnermostSimpleType(String type) {
-        if (type == null) return null;
-        // Get everything between the last < and >
-        int start = type.lastIndexOf('<');
-        int end = type.lastIndexOf('>');
-        if (start >= 0 && end > start) {
-            String inner = type.substring(start + 1, end).trim();
-            return SignatureUtil.simpleClassName(inner);
-        }
-        return SignatureUtil.simpleClassName(type);
-    }
-
-    /**
      * Try to find and parse an entity class by its simple name.
      * Strategy: 1) imports resolution 2) same package 3) sibling packages 4) source root search
      */
@@ -421,28 +403,35 @@ public class MarginaliaService {
         EntityDoc indexed = tryFindIndexedEntity(fqn, SignatureUtil.simpleClassName(fqn));
         if (indexed != null) return indexed;
 
-        // Convert fully qualified name to relative path
-        String relativePath = fqn.replace('.', '/') + ".java";
-
-        // Try from each source directory
+        // Try the exact type path, then progressively remove nested type segments.
+        // com.example.Outer.Inner -> com/example/Outer/Inner.java -> com/example/Outer.java
         for (String srcDir : sourceDirs) {
-            Path candidate = Path.of(srcDir, relativePath);
-            if (Files.exists(candidate)) {
-                return parser.parseEntity(candidate, SignatureUtil.simpleClassName(fqn));
-            }
+            EntityDoc entity = tryNestedTypeSource(Path.of(srcDir), fqn);
+            if (entity != null) return entity;
         }
 
         // Try relative to the source file's source root
         for (String srcDir : sourceDirs) {
             Path srcPath = Path.of(srcDir);
             if (sourceFile.startsWith(srcPath)) {
-                Path candidate = srcPath.resolve(relativePath);
-                if (Files.exists(candidate)) {
-                    return parser.parseEntity(candidate, SignatureUtil.simpleClassName(fqn));
-                }
+                EntityDoc entity = tryNestedTypeSource(srcPath, fqn);
+                if (entity != null) return entity;
             }
         }
 
+        return null;
+    }
+
+    private EntityDoc tryNestedTypeSource(Path sourceRoot, String fullTypeName) {
+        String candidateName = fullTypeName;
+        while (candidateName.contains(".")) {
+            Path candidate = sourceRoot.resolve(candidateName.replace('.', '/') + ".java");
+            if (Files.exists(candidate)) {
+                EntityDoc entity = parser.parseEntity(candidate, fullTypeName);
+                if (entity != null) return entity;
+            }
+            candidateName = candidateName.substring(0, candidateName.lastIndexOf('.'));
+        }
         return null;
     }
 
@@ -461,6 +450,12 @@ public class MarginaliaService {
             String simpleName = fileName.substring(0, fileName.length() - 5);
             indexSourceType(simpleName, sourceFile);
 
+            List<String> declaredTypes = parser.findDeclaredEntityTypes(sourceFile);
+            for (String declaredType : declaredTypes) {
+                indexSourceType(declaredType, sourceFile);
+                indexSourceType(SignatureUtil.simpleClassName(declaredType), sourceFile);
+            }
+
             for (Path root : roots) {
                 if (!absoluteFile.startsWith(root)) continue;
                 String relativeName = root.relativize(absoluteFile).toString()
@@ -474,14 +469,18 @@ public class MarginaliaService {
     }
 
     private void indexSourceType(String typeName, Path sourceFile) {
-        sourceTypeIndex.computeIfAbsent(typeName, ignored -> new ArrayList<>()).add(sourceFile);
+        List<Path> candidates = sourceTypeIndex.computeIfAbsent(typeName, ignored -> new ArrayList<>());
+        if (!candidates.contains(sourceFile)) candidates.add(sourceFile);
     }
 
     private EntityDoc tryFindIndexedEntity(String typeName, String expectedSimpleName) {
         List<Path> candidates = sourceTypeIndex.get(typeName);
         if (candidates == null) return null;
         for (Path candidate : candidates) {
-            EntityDoc entity = parser.parseEntity(candidate, expectedSimpleName);
+            EntityDoc entity = parser.parseEntity(candidate, typeName);
+            if (entity == null && !typeName.equals(expectedSimpleName)) {
+                entity = parser.parseEntity(candidate, expectedSimpleName);
+            }
             if (entity != null) {
                 log.debug("Found entity '{}' through source index: {}", typeName, candidate);
                 return entity;
